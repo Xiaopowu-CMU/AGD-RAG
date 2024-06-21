@@ -1,0 +1,65 @@
+# Import the necessary module for loading PDF documents
+from langchain.document_loaders import PyPDFLoader
+
+# Specify the path to the PDF file
+loader = PyPDFLoader("pdf path")
+
+# Load the PDF and split it into individual pages
+pages = loader.load_and_split()
+
+# Preview the text of the first page after splitting
+pages[0]
+
+# Split the text into chunks
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,  # Set the size of each chunk
+    chunk_overlap=50,  # Set the overlap between chunks
+)
+
+docs = text_splitter.split_documents(pages)  # Split the documents into chunks
+
+# Check the number of chunks after splitting
+len(docs)
+
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.vectorstores import Chroma
+
+embed_model = OpenAIEmbeddings(
+    openai_api_key="gpt api",  # Your OpenAI API key
+    model="text-embedding-ada-002"  # The model to use for embeddings
+)
+
+vectorstore = Chroma.from_documents(
+    documents=docs,  # The documents to embed
+    embedding=embed_model,  # The embedding model to use
+    collection_name="openai_embed"  # The name of the collection
+)
+
+query = "My test found a BRCA1 mutation, what does this mean?"
+result = vectorstore.similarity_search(query, k=2)  # Perform a similarity search
+
+result
+
+def augment_prompt(query: str):
+    # Get the top 3 text fragments
+    results = vectorstore.similarity_search(query, k=3)
+    source_knowledge = "\n".join([x.page_content for x in results])
+    # Construct the prompt
+    augmented_prompt = f"""You are a senior oncologist. Please summarize the content of the knowledge base to answer the question. Please list the data in the knowledge base and answer in detail. And answer my questions as follows:
+    - Please use concise and professional language to answer my questions.
+    - If you do not know the answer, please answer "I did not find the relevant information in the knowledge base, sorry I cannot provide an answer".
+    - Please ensure that the answer is the same as described in the known information.
+    - Please use Markdown syntax to optimize the formatting of your answers.
+    - Please think step by step and answer my questions.
+    
+    Here is the knowledge base:
+    {source_knowledge}
+    The above is the knowledge base.
+
+    contexts:
+    {source_knowledge}
+
+    query: {query}"""
+    return augmented_prompt
